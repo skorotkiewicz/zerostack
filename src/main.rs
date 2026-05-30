@@ -3,9 +3,12 @@ mod auth;
 mod cli;
 mod config;
 mod context;
+mod docs;
 mod event;
 mod extras;
+mod fs;
 mod permission;
+mod pricing;
 mod provider;
 mod sandbox;
 mod session;
@@ -20,9 +23,10 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use clap::Parser;
 use session::MessageRole;
 
+use crate::agent::tools;
+use crate::permission::SecurityMode;
 use crate::permission::ask::AskSender;
 use crate::permission::checker::{PermCheck, PermissionChecker};
-use crate::permission::SecurityMode;
 
 fn resolve_mode(cli: &cli::Cli, cfg: &config::Config) -> SecurityMode {
     if cli.yolo || cfg.yolo.unwrap_or(false) {
@@ -83,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let _ = docs::ensure_global();
     let mut context = context::load(cli.resolve_no_context_files(&cfg));
 
     let default_prompt = cfg.default_prompt.as_deref().unwrap_or("code");
@@ -150,17 +155,6 @@ async fn main() -> anyhow::Result<()> {
         cfg.api_keys.as_ref(),
     )?;
 
-    #[cfg(feature = "mcp")]
-    let mcp_manager = if let Some(servers) = &cfg.mcp_servers {
-        if !cli.resolve_no_tools(&cfg) {
-            Some(extras::mcp::McpClientManager::connect_all(servers).await)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
     #[cfg(feature = "acp")]
     if cli.acp_enabled {
         return extras::acp::serve(cli, cfg, context).await;
@@ -168,6 +162,8 @@ async fn main() -> anyhow::Result<()> {
 
     let sandbox =
         sandbox::Sandbox::new(cli.resolve_sandbox(&cfg)).with_shell(&cli.resolve_shell(&cfg));
+    let edit_system = cli.resolve_edit_system(&cfg);
+    tools::set_edit_system(edit_system);
     let (permission, ask_tx, ask_rx) = build_permission_checker(&cli, &cfg);
 
     if let Some(perm) = &permission {
@@ -194,7 +190,7 @@ async fn main() -> anyhow::Result<()> {
             sandbox.clone(),
             true,
             #[cfg(feature = "mcp")]
-            mcp_manager.as_ref(),
+            None,
         )
         .await;
         let msg = cli.message.join(" ");
@@ -224,7 +220,7 @@ async fn main() -> anyhow::Result<()> {
                 sandbox.clone(),
                 true,
                 #[cfg(feature = "mcp")]
-                mcp_manager.as_ref(),
+                None,
             )
             .await;
             return run_headless_loop(agent, &cli, &cfg, &context).await;
@@ -254,15 +250,8 @@ async fn main() -> anyhow::Result<()> {
             ask_tx,
             ask_rx,
             sandbox,
-            #[cfg(feature = "mcp")]
-            mcp_manager.as_ref(),
         )
         .await?;
-    }
-
-    #[cfg(feature = "mcp")]
-    if let Some(mgr) = mcp_manager {
-        mgr.shutdown().await;
     }
 
     Ok(())
@@ -293,6 +282,7 @@ fn print_config(cli: &cli::Cli, cfg: &config::Config) {
     let no_context_files = cli.resolve_no_context_files(cfg);
     let sandbox = cli.resolve_sandbox(cfg);
     let shell = cli.resolve_shell(cfg);
+    let edit_system = cli.resolve_edit_system(cfg);
     let compact = cfg.resolve_compact_enabled();
 
     let mode = if cli.yolo || cfg.yolo.unwrap_or(false) {
@@ -339,6 +329,7 @@ fn print_config(cli: &cli::Cli, cfg: &config::Config) {
         &[
             ("permission-mode", mode.to_string()),
             ("shell", shell.to_string()),
+            ("edit-system", edit_system.to_string()),
             ("sandbox", sandbox.to_string()),
             ("no-tools", no_tools.to_string()),
             ("no-context-files", no_context_files.to_string()),

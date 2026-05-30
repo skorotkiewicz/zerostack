@@ -2,6 +2,7 @@ use clap::Parser;
 use compact_str::CompactString;
 
 use crate::config;
+use crate::config::types::EditSystem;
 
 #[derive(Parser, Debug)]
 #[command(name = "zerostack", version, about = "Minimal coding agent")]
@@ -89,6 +90,12 @@ pub struct Cli {
     pub shell: Option<String>,
 
     #[arg(
+        long = "edit-system",
+        help = "Edit system (similarity or hashedit). Default: similarity"
+    )]
+    pub edit_system: Option<String>,
+
+    #[arg(
         long = "no-context-files",
         short = 'n',
         help = "Disable AGENTS.md loading"
@@ -135,6 +142,21 @@ pub struct Cli {
         help = "Validation command to run after each iteration"
     )]
     pub loop_run: Option<String>,
+
+    #[cfg(feature = "git-worktree")]
+    #[arg(long = "worktree", help = "Create a git worktree and cd into it")]
+    pub worktree: Option<String>,
+
+    #[cfg(feature = "git-worktree")]
+    #[arg(long = "wt-auto-merge", help = "Auto-merge worktree branch on exit")]
+    pub wt_auto_merge: bool,
+
+    #[cfg(feature = "git-worktree")]
+    #[arg(
+        long = "parallel",
+        help = "Create a worktree with timestamp name and auto-merge on exit"
+    )]
+    pub parallel: bool,
 
     #[arg(help = "Prompt message(s)")]
     pub message: Vec<String>,
@@ -190,5 +212,18 @@ impl Cli {
             .clone()
             .or_else(|| cfg.shell.clone())
             .unwrap_or_else(|| "bash".to_string())
+    }
+
+    pub fn resolve_edit_system(&self, cfg: &config::Config) -> EditSystem {
+        self.edit_system
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+            .or(cfg.edit_system)
+            .unwrap_or_default()
+    }
+
+    #[cfg(feature = "git-worktree")]
+    pub fn resolve_wt_auto_merge(&self, cfg: &config::Config) -> bool {
+        self.wt_auto_merge || self.parallel || cfg.wt_auto_merge.unwrap_or(false)
     }
 }

@@ -5,7 +5,7 @@ use crossterm::cursor::MoveTo;
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::Clear;
 
-use super::resolve_color;
+use super::utils::resolve_color;
 
 const COMMANDS: &[&str] = &[
     "/model",
@@ -26,8 +26,11 @@ const COMMANDS: &[&str] = &[
     "/history",
     "/regen-prompts",
     "/regen-themes",
+    "/editsys",
     "/quit",
+    "/exit",
     "/clear",
+    "/new",
     "/undo",
     "/retry",
     "/help",
